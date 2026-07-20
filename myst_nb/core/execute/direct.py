@@ -10,7 +10,12 @@ from typing import ContextManager
 
 from jupyter_cache.executors.utils import single_nb_execution
 
-from .base import ExecutionError, NotebookClientBase
+from .base import (
+    ExecutionError,
+    NotebookClientBase,
+    close_tracked_clients,
+    track_kernel_clients,
+)
 
 
 class NotebookClientDirect(NotebookClientBase):
@@ -31,7 +36,7 @@ class NotebookClientDirect(NotebookClientBase):
             cwd_context = nullcontext(str(self.path.parent))
 
         # execute in the context of the current working directory
-        with cwd_context as cwd:
+        with cwd_context as cwd, track_kernel_clients(self._kernel_manager) as clients:
             cwd = os.path.abspath(cwd)
             self.logger.info(
                 "Executing notebook using "
@@ -46,6 +51,7 @@ class NotebookClientDirect(NotebookClientBase):
                 meta_override=True,  # TODO still support this?
                 km=self._kernel_manager,
             )
+        close_tracked_clients(clients)
 
         if result.err is not None:
             if self.nb_config.execution_raise_on_error:

@@ -90,6 +90,11 @@ class NotebookClientInline(NotebookClientBase):
         self.logger.info("Stopping inline execution client")
         if self._client.owns_km:
             self._client._cleanup_kernel()
+        elif self._client.kc is not None:
+            # we don't own the kernel manager, so leave the kernel running,
+            # but the client (and its open zmq channels) is ours to close
+            self._client.kc.stop_channels()
+            self._client.kc = None
         del self._client
 
         _exec_time = time.perf_counter() - self._time_start

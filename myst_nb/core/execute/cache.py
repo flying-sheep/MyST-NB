@@ -13,7 +13,12 @@ from jupyter_cache.base import CacheBundleIn
 from jupyter_cache.cache.db import NbProjectRecord
 from jupyter_cache.executors.utils import single_nb_execution
 
-from .base import ExecutionError, NotebookClientBase
+from .base import (
+    ExecutionError,
+    NotebookClientBase,
+    close_tracked_clients,
+    track_kernel_clients,
+)
 
 
 class NotebookClientCache(NotebookClientBase):
@@ -63,7 +68,7 @@ class NotebookClientCache(NotebookClientBase):
             if self.nb_config.execution_in_temp
             else nullcontext(str(self.path.parent))
         )
-        with cwd_context as cwd:
+        with cwd_context as cwd, track_kernel_clients(self._kernel_manager) as clients:
             cwd = os.path.abspath(cwd)
             self.logger.info(
                 "Executing notebook using "
@@ -78,6 +83,7 @@ class NotebookClientCache(NotebookClientBase):
                 meta_override=True,  # TODO still support this?
                 km=self._kernel_manager,
             )
+        close_tracked_clients(clients)
 
         # handle success / failure cases
         # TODO do in try/except to be careful (in case of database write errors?

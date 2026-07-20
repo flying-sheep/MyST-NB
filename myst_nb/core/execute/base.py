@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
@@ -14,7 +15,49 @@ from myst_nb.core.nb_to_tokens import nb_node_to_dict
 from myst_nb.ext.glue import extract_glue_data
 
 if TYPE_CHECKING:
-    from jupyter_client import KernelManager
+    from collections.abc import Generator
+
+    from jupyter_client import KernelClient, KernelManager
+
+
+@contextmanager
+def track_kernel_clients(
+    km: KernelManager | None,
+) -> Generator[list[KernelClient], None, None]:
+    """Track kernel clients created via ``km.client()``, for later cleanup.
+
+    ``nbclient`` (and ``jupyter_cache``, which wraps it) only closes the
+    kernel client it creates when it also owns (i.e. created) the kernel
+    manager. When a caller supplies its own ``kernel_manager``, any client
+    created from it is left with its channels open, since neither the
+    caller (who never sees the client) nor ``nbclient`` (which doesn't own
+    the manager) closes it. Temporarily wrapping ``km.client`` lets us
+    capture that client so it can be closed once execution finishes,
+    without touching the kernel manager itself.
+    """
+    created: list[KernelClient] = []
+    if km is None:
+        yield created
+        return
+    orig_client = km.client
+
+    def client(**kwargs: Any) -> KernelClient:
+        kc = orig_client(**kwargs)
+        created.append(kc)
+        return kc
+
+    km.client = client  # type: ignore[method-assign, assignment]
+    try:
+        yield created
+    finally:
+        km.client = orig_client  # type: ignore[method-assign]
+
+
+def close_tracked_clients(clients: list[KernelClient]) -> None:
+    """Close any still-open kernel clients tracked by `track_kernel_clients`."""
+    for kc in clients:
+        if kc.channels_running:
+            kc.stop_channels()
 
 
 class ExecutionResult(TypedDict):
